@@ -54,6 +54,11 @@ esp_sleep_source_t wakeCause;  // the reason we booted this time
 
 void buildPacket(uint8_t txBuffer[]);  // needed for platformio
 
+float last_lat = 0;
+float last_lng = 0;
+float last_alt = 0;
+uint32_t last_actual_sent = 0;
+
 /**
  * If we have a valid position send it to the server.
  * @return true if we decided to send.
@@ -61,29 +66,50 @@ void buildPacket(uint8_t txBuffer[]);  // needed for platformio
 bool trySend() {
     packetSent = false;
     // We also wait for altitude being not exactly zero, because the GPS chip generates a bogus 0 alt report when first powered on
-    if (0 < gps_hdop() && gps_hdop() < 50 && gps_latitude() != 0 && gps_longitude() != 0 && gps_altitude() != 0) {
+    float lat = gps_latitude();
+    float lng = gps_longitude();
+    float alt = gps_altitude();
+    if (0 < gps_hdop() && gps_hdop() < 50 && lat != 0 && lng != 0 && alt != 0) {
         char buffer[40];
-        snprintf(buffer, sizeof(buffer), "Latitude: %10.6f\n", gps_latitude());
+        float lat_diff = abs(last_lat - lat);
+        float lng_diff = abs(last_lng - lng);
+        float alt_diff = abs(last_alt - alt);
+        snprintf(buffer, sizeof(buffer), "Lat Diff: %10.6f\n", lat_diff);
         screen_print(buffer);
-        snprintf(buffer, sizeof(buffer), "Longitude: %10.6f\n", gps_longitude());
+        snprintf(buffer, sizeof(buffer), "Lng Diff: %10.6f\n", lng_diff);
+        screen_print(buffer);
+        snprintf(buffer, sizeof(buffer), "Alt Diff: %10.6f\n", alt_diff);
+        screen_print(buffer);
+        if (millis() - last_actual_sent < FORCE_SEND_AFTER && lat_diff < CHANGE_DELTA && lng_diff < CHANGE_DELTA && alt_diff < 50) {
+            screen_print("GPS has not moved far\n");
+            return true;
+        }
+        last_lat = lat;
+        last_lng = lng;
+        last_alt = alt;
+
+        snprintf(buffer, sizeof(buffer), "Latitude: %10.6f\n", lat);
+        screen_print(buffer);
+        snprintf(buffer, sizeof(buffer), "Longitude: %10.6f\n", lng);
+        screen_print(buffer);
+        snprintf(buffer, sizeof(buffer), "ALtitude: %10.6f\n", alt);
         screen_print(buffer);
         snprintf(buffer, sizeof(buffer), "Error: %4.2fm\n", gps_hdop());
         screen_print(buffer);
 
         buildPacket(txBuffer);
 
-    #if LORAWAN_CONFIRMED_EVERY > 0
-        bool confirmed = (ttn_get_count() % LORAWAN_CONFIRMED_EVERY == 0);
-        if (confirmed){ Serial.println("confirmation enabled"); }
-    #else
-        bool confirmed = false;
-    #endif
+        #if LORAWAN_CONFIRMED_EVERY > 0
+            if (confirmed){ Serial.println("confirmation enabled"); }
+        #else
+            bool confirmed = false;
+        #endif
 
-    packetQueued = true;
-    ttn_send(txBuffer, sizeof(txBuffer), LORAWAN_PORT, confirmed);
-    return true;
-    }
-    else {
+        packetQueued = true;
+        ttn_send(txBuffer, sizeof(txBuffer), LORAWAN_PORT, confirmed);
+        last_actual_sent = millis();
+        return true;
+    } else {
         return false;
     }
 }
