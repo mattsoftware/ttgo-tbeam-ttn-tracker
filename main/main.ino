@@ -80,7 +80,7 @@ bool trySend() {
         screen_print(buffer);
         snprintf(buffer, sizeof(buffer), "Alt Diff: %10.6f\n", alt_diff);
         screen_print(buffer);
-        if (millis() - last_actual_sent < FORCE_SEND_AFTER && lat_diff < CHANGE_DELTA && lng_diff < CHANGE_DELTA && alt_diff < 50) {
+        if (millis() - last_actual_sent < FORCE_SEND_EVERY && lat_diff < CHANGE_DELTA && lng_diff < CHANGE_DELTA && alt_diff < 50) {
             screen_print("GPS has not moved far\n");
             return true;
         }
